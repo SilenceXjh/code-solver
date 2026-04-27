@@ -51,9 +51,17 @@ Your strategy must:
 - Be clearly different from the already-explored approaches listed above
 - Specify the core algorithm paradigm (e.g., DP with memoization, greedy by X, BFS on Y)
 - Mention the key data structures if relevant
-- Estimate the time complexity
 
 Respond with ONLY the strategy text, no headers or bullet points.
+"""
+
+_ADDITIONAL_STRATEGY_REQUIREMENT ="""
+{diversity_hint}
+
+Your strategy must:
+- Be clearly different from the already-explored approaches listed above
+- Specify the core algorithm paradigm (e.g., DP with memoization, greedy by X, BFS on Y)
+- Mention the key data structures if relevant
 """
 
 _DIVERSITY_HINT_TEMPLATE = """\
@@ -190,6 +198,7 @@ class ThinkerAgent:
             exec_feedback=exec_feedback,
             fault_info=fault_info,
         )
+        # print("reflection input message:", user_prompt)
         return self.llm.chat_simple(
             system=_REFLECTION_SYSTEM,
             user=user_prompt,

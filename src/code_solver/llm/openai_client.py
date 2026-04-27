@@ -11,7 +11,7 @@ import os
 import time
 from typing import Optional
 
-from llm.base import LLMClient, LLMResponse, Message
+from code_solver.llm.base import LLMClient, LLMResponse, Message
 
 
 class OpenAIClient(LLMClient):
@@ -79,6 +79,7 @@ class OpenAIClient(LLMClient):
             temperature=temperature,
             max_tokens=max_tokens,
         )
+        # print("llm input messages:", openai_messages)
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
 
@@ -86,6 +87,7 @@ class OpenAIClient(LLMClient):
         for attempt in range(self.max_retries):
             try:
                 resp = client.chat.completions.create(**kwargs)
+                # print("llm response:", resp.choices[0].message.content)
                 return LLMResponse(
                     content=resp.choices[0].message.content,
                     model=resp.model,

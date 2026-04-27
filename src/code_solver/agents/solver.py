@@ -7,18 +7,12 @@ LCB 格式：从 stdin 读输入，结果写到 stdout。
 
 import re
 
-from llm.base import LLMClient
+from code_solver.data.lcb_loader import Problem
+from code_solver.llm.base import LLMClient
 
 _SOLVER_SYSTEM = """\
 You are an expert competitive programmer. Your task is to implement a Python solution \
 for a programming problem following a given algorithm strategy.
-
-Requirements:
-- Read input from stdin using sys.stdin or input()
-- Print the answer to stdout
-- Follow the given strategy precisely
-- Write clean, correct Python 3 code
-- Do NOT include any explanation, only code
 """
 
 _SOLVER_USER = """\
@@ -27,6 +21,9 @@ _SOLVER_USER = """\
 
 ### Strategy to implement
 {strategy}
+
+### Format
+{format_str}
 
 Write the complete Python solution now:
 ```python
@@ -38,18 +35,38 @@ class SolverAgent:
     def __init__(self, llm: LLMClient):
         self.llm = llm
 
-    def generate(self, problem: str, strategy: str) -> str:
+    def construct_generate_prompt(self, problem: Problem, strategy: str) -> str:
+        from code_solver.data.lcb_loader import FORMATTING_MESSAGE_WITH_STARTER_CODE, FORMATTING_WITHOUT_STARTER_CODE
+
+        prompt = f"### Question:\n{problem.description}\n\n"
+
+        prompt += f"### Strategy:\n{strategy}\n\n"
+        
+        if problem.starter_code:
+            prompt += (
+                f"### Format: {FORMATTING_MESSAGE_WITH_STARTER_CODE}\n"
+            )
+            prompt += f"```python\n{problem.starter_code}\n```\n\n"
+        else:
+            prompt += f"### Format: {FORMATTING_WITHOUT_STARTER_CODE}\n"
+            prompt += "```python\n# YOUR CODE HERE\n```\n\n"
+        
+        return prompt
+
+    def generate(self, problem: Problem, strategy: str) -> str:
         """
         根据题目和策略生成代码。
 
         Args:
-            problem  : 格式化后的题目描述
+            problem  : 题目
             strategy : Thinker 给出的算法策略
 
         Returns:
             清理后的 Python 代码字符串
         """
-        user_prompt = _SOLVER_USER.format(problem=problem, strategy=strategy)
+
+        user_prompt = self.construct_generate_prompt(problem, strategy)
+        # print("generate prompt:", user_prompt)
         raw = self.llm.chat_simple(
             system=_SOLVER_SYSTEM,
             user=user_prompt,

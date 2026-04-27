@@ -35,15 +35,15 @@ def build_search_engine(args):
     import sys
     sys.path.insert(0, str(Path(__file__).parent))
 
-    from execution.executor import Executor
-    from agents.thinker import ThinkerAgent
-    from agents.solver import SolverAgent
-    from agents.debugger import DebuggerAgent
-    from agents.critic import CriticAgent
-    from modules.adversarial_tester import AdversarialTester
-    from modules.difficulty_assessor import DifficultyAssessor
-    from modules.fault_localizer import FaultLocalizer
-    from tree.search import CodeTreeSearch
+    from code_solver.execution.executor import Executor
+    from code_solver.agents.thinker import ThinkerAgent
+    from code_solver.agents.solver import SolverAgent
+    from code_solver.agents.debugger import DebuggerAgent
+    from code_solver.agents.critic import CriticAgent
+    from code_solver.modules.adversarial_tester import AdversarialTester
+    from code_solver.modules.difficulty_assessor import DifficultyAssessor
+    from code_solver.modules.fault_localizer import FaultLocalizer
+    from code_solver.tree.search import CodeTreeSearch
 
     if args.mock:
         from llm.mock_client import FixedMockClient

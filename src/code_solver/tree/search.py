@@ -18,16 +18,16 @@ CodeTree+ 主搜索循环
 import logging
 from dataclasses import dataclass
 
-from agents.critic import CriticAgent, CriticDecision
-from agents.debugger import DebuggerAgent
-from agents.solver import SolverAgent
-from agents.thinker import ThinkerAgent
-from data.lcb_loader import Problem
-from execution.executor import Executor
-from modules.adversarial_tester import AdversarialTester
-from modules.difficulty_assessor import DifficultyAssessor
-from modules.fault_localizer import FaultLocalizer
-from tree.node import FaultReport, Node, NodeStatus, SearchTree
+from code_solver.agents.critic import CriticAgent, CriticDecision
+from code_solver.agents.debugger import DebuggerAgent
+from code_solver.agents.solver import SolverAgent
+from code_solver.agents.thinker import ThinkerAgent
+from code_solver.data.lcb_loader import Problem
+from code_solver.execution.executor import Executor
+from code_solver.modules.adversarial_tester import AdversarialTester
+from code_solver.modules.difficulty_assessor import DifficultyAssessor
+from code_solver.modules.fault_localizer import FaultLocalizer
+from code_solver.tree.node import FaultReport, Node, NodeStatus, SearchTree
 
 log = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ class CodeTreeSearch:
 
         # ── Step 1：难度评估 → 自适应预算 ────────────────────────────────────
         if self.use_difficulty_assessor:
-            assessment = self.assessor.assess(problem_str)
+            assessment = self.assessor.assess(problem.description)
             width = assessment.width
             depth = assessment.depth
             log.info(
@@ -119,7 +119,7 @@ class CodeTreeSearch:
 
             # 生成新策略（多样性约束）
             explored = tree.explored_paradigms if self.use_diversity_thinker else []
-            strategy_result = self.thinker.generate_strategy(problem_str, explored)
+            strategy_result = self.thinker.generate_strategy(problem.description, explored)
 
             log.info(
                 f"[{problem.problem_id}] Strategy {strategy_idx+1}/{width}: "
@@ -127,7 +127,7 @@ class CodeTreeSearch:
             )
 
             # 生成初始代码
-            code = self.solver.generate(problem_str, strategy_result.strategy)
+            code = self.solver.generate(problem, strategy_result.strategy)
 
             # 创建根节点（深度=1）
             node = Node(
@@ -141,7 +141,7 @@ class CodeTreeSearch:
             # ── Step 3：DFS 调试（深度 = depth）─────────────────────────────
             accepted = self._refine_loop(
                 node=node,
-                problem_str=problem_str,
+                problem_str=problem.description,
                 public_tests=problem.public_tests,
                 tree=tree,
                 max_depth=depth,

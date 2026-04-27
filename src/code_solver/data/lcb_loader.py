@@ -235,7 +235,7 @@ class LCBLoader:
         #     version_tag=self.release_version,
         #     split="test",
         # )
-        ds = load_dataset("json", data_files="/data1/xjh/code-solver/src/code_solver/data/livecodebench_all.jsonl")
+        ds = load_dataset("json", data_files="/data0/xjh/code-solver/src/code_solver/data/livecodebench_all.jsonl")
         problems = []
         for item in ds["train"]:
             p = self._parse_item(item)
