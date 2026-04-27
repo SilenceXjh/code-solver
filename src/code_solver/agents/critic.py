@@ -20,11 +20,11 @@ CodeTree 原版 Critic 的两个职责：
 from dataclasses import dataclass
 from enum import Enum
 
-from execution.executor import SuiteResult
-from llm.base import LLMClient
-from modules.adversarial_tester import AdversarialTester, AdversarialResult
-from execution.executor import TestCase
-from tree.node import NodeStatus
+from code_solver.execution.executor import SuiteResult
+from code_solver.llm.base import LLMClient
+from code_solver.modules.adversarial_tester import AdversarialTester, AdversarialResult
+from code_solver.execution.executor import TestCase
+from code_solver.tree.node import NodeStatus
 
 _SCORE_SYSTEM = """\
 You are an expert code reviewer for competitive programming.

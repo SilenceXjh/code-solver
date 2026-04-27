@@ -123,7 +123,7 @@ class CodeTreeSearch:
 
             log.info(
                 f"[{problem.problem_id}] Strategy {strategy_idx+1}/{width}: "
-                f"{strategy_result.algo_paradigm} — {strategy_result.strategy[:60]}..."
+                f"{strategy_result.algo_paradigm} — {strategy_result.strategy[:100]}..."
             )
 
             # 生成初始代码
@@ -280,7 +280,7 @@ class CodeTreeSearch:
         False           | True            | public 全过 + LLM 验证
         True            | False/True      | 对抗测试（+ 仲裁）
         """
-        from agents.critic import CriticResult
+        from code_solver.agents.critic import CriticResult
 
         # public tests 未全过：所有模式下统一用打分决定 Refine/Abort
         if not suite_result.all_passed:

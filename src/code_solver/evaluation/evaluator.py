@@ -13,9 +13,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Optional
 
-from data.lcb_loader import Problem
-from execution.executor import Executor
-from tree.search import SearchResult
+from code_solver.data.lcb_loader import Problem
+from code_solver.execution.executor import Executor
+from code_solver.tree.search import SearchResult
 
 
 @dataclass
