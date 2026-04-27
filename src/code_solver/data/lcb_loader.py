@@ -34,6 +34,10 @@ from code_solver.execution.executor import TestCase
 
 # ── Problem 数据类 ────────────────────────────────────────────────────────────
 
+FORMATTING_MESSAGE_WITH_STARTER_CODE = "You will use the following starter code to write the solution to the problem and enclose your code within delimiters."
+
+FORMATTING_WITHOUT_STARTER_CODE = "Read the inputs from stdin, solve the problem, and write the answer to stdout (do not directly test on the sample inputs). Enclose your code within delimiters as follows. Ensure that when the python program runs, it reads the inputs, runs the algorithm and writes output to STDOUT."
+
 @dataclass
 class Problem:
     problem_id: str
@@ -48,28 +52,42 @@ class Problem:
     public_tests: list[TestCase] = field(default_factory=list)
     private_tests: list[TestCase] = field(default_factory=list)
 
+    # def format_for_prompt(self) -> str:
+    #     """格式化为 LLM prompt 用的字符串"""
+    #     lines = [
+    #         f"## {self.title}",
+    #         f"Difficulty: {self.difficulty.capitalize()} | Platform: {self.platform.capitalize()}",
+    #         f"Format: {'Standard Input/Output' if self.is_stdin else 'Function Implementation'}",
+    #         "",
+    #         self.description.strip(),
+    #     ]
+    #     if self.starter_code:
+    #         lines.append(f"\n### Starter Code (implement this):\n```python\n{self.starter_code}\n```")
+    #     if self.public_tests:
+    #         lines.append("\n### Examples:")
+    #         for i, tc in enumerate(self.public_tests, 1):
+    #             lines.append(f"\n**Example {i}:**")
+    #             if tc.testtype == "stdin":
+    #                 lines.append(f"Input:\n```\n{tc.input}\n```")
+    #                 lines.append(f"Output:\n```\n{tc.output}\n```")
+    #             else:
+    #                 lines.append(f"Input (args): `{tc.input}`")
+    #                 lines.append(f"Output: `{tc.output}`")
+    #     return "\n".join(lines)
     def format_for_prompt(self) -> str:
-        """格式化为 LLM prompt 用的字符串"""
-        lines = [
-            f"## {self.title}",
-            f"Difficulty: {self.difficulty.capitalize()} | Platform: {self.platform.capitalize()}",
-            f"Format: {'Standard Input/Output' if self.is_stdin else 'Function Implementation'}",
-            "",
-            self.description.strip(),
-        ]
+        prompt = f"### Question:\n{self.description}\n\n"
+        
         if self.starter_code:
-            lines.append(f"\n### Starter Code (implement this):\n```python\n{self.starter_code}\n```")
-        if self.public_tests:
-            lines.append("\n### Examples:")
-            for i, tc in enumerate(self.public_tests, 1):
-                lines.append(f"\n**Example {i}:**")
-                if tc.testtype == "stdin":
-                    lines.append(f"Input:\n```\n{tc.input}\n```")
-                    lines.append(f"Output:\n```\n{tc.output}\n```")
-                else:
-                    lines.append(f"Input (args): `{tc.input}`")
-                    lines.append(f"Output: `{tc.output}`")
-        return "\n".join(lines)
+            prompt += (
+                f"### Format: {FORMATTING_MESSAGE_WITH_STARTER_CODE}\n"
+            )
+            prompt += f"```python\n{self.starter_code}\n```\n\n"
+        else:
+            prompt += f"### Format: {FORMATTING_WITHOUT_STARTER_CODE}\n"
+            prompt += "```python\n# YOUR CODE HERE\n```\n\n"
+        
+        return prompt
+
 
 
 # ── 数据解析工具函数 ──────────────────────────────────────────────────────────
@@ -217,7 +235,7 @@ class LCBLoader:
         #     version_tag=self.release_version,
         #     split="test",
         # )
-        ds = load_dataset("json", data_files="/data0/xjh/code-solver/src/code_solver/data/livecodebench_all.jsonl")
+        ds = load_dataset("json", data_files="/data1/xjh/code-solver/src/code_solver/data/livecodebench_all.jsonl")
         problems = []
         for item in ds["train"]:
             p = self._parse_item(item)
