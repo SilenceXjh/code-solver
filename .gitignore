@@ -12,3 +12,8 @@ lcb_cache/
 src/code_solver/data/*.jsonl
 results/
 *.log
+direct_solve_codes/
+cot_solve_codes/
+*.jsonl
+*.json
+nohup.out

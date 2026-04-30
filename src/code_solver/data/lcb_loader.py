@@ -51,6 +51,7 @@ class Problem:
 
     public_tests: list[TestCase] = field(default_factory=list)
     private_tests: list[TestCase] = field(default_factory=list)
+    metadata: dict = field(default_factory=dict)  # 原始数据的元信息，如 func_name
 
     # def format_for_prompt(self) -> str:
     #     """格式化为 LLM prompt 用的字符串"""
@@ -106,7 +107,7 @@ def decode_private_tests(encoded: str) -> list[dict]:
         return []
 
 
-def parse_test_cases(raw: str | list, is_public: bool) -> list[TestCase]:
+def parse_test_cases(raw: str | list, is_public: bool, metadata: dict) -> list[TestCase]:
     """
     解析 public_test_cases 或 private_test_cases。
 
@@ -151,6 +152,7 @@ def parse_test_cases(raw: str | list, is_public: bool) -> list[TestCase]:
             output=out,
             testtype=testtype,
             is_public=is_public,
+            metadata=metadata,
         ))
     return tests
 
@@ -245,21 +247,30 @@ class LCBLoader:
 
     def _parse_item(self, item: dict) -> Optional[Problem]:
         try:
+            raw_metadata = item.get("metadata", "{}")
+            if isinstance(raw_metadata, str):
+                try:
+                    metadata = json.loads(raw_metadata)
+                except json.JSONDecodeError:
+                    metadata = {}
+            else:
+                metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
+
             pub_raw  = item.get("public_test_cases", "[]")
             priv_raw = item.get("private_test_cases", "")
 
             is_stdin = detect_is_stdin(pub_raw)
-            pub_tests  = parse_test_cases(pub_raw, is_public=True)
+            pub_tests  = parse_test_cases(pub_raw, is_public=True, metadata=metadata)
 
             # private tests：先尝试 base64 解码，失败则直接 JSON 解析
             if isinstance(priv_raw, str) and priv_raw:
                 priv_decoded = decode_private_tests(priv_raw)
                 if priv_decoded:
-                    priv_tests = parse_test_cases(priv_decoded, is_public=False)
+                    priv_tests = parse_test_cases(priv_decoded, is_public=False, metadata=metadata)
                 else:
-                    priv_tests = parse_test_cases(priv_raw, is_public=False)
+                    priv_tests = parse_test_cases(priv_raw, is_public=False, metadata=metadata)
             else:
-                priv_tests = parse_test_cases(priv_raw, is_public=False)
+                priv_tests = parse_test_cases(priv_raw, is_public=False, metadata=metadata)
 
             return Problem(
                 problem_id=str(item.get("question_id", "?")),
@@ -272,6 +283,7 @@ class LCBLoader:
                 is_stdin=is_stdin,
                 public_tests=pub_tests,
                 private_tests=priv_tests,
+                metadata=metadata,
             )
         except Exception as e:
             print(f"[LCBLoader] Parse error: {e}")
@@ -293,13 +305,14 @@ class LCBLoader:
                 "starter_code":p.starter_code,
                 "is_stdin":    p.is_stdin,
                 "public_tests": [
-                    {"input": t.input, "output": t.output, "testtype": t.testtype}
+                    {"input": t.input, "output": t.output, "testtype": t.testtype, "metadata": t.metadata}
                     for t in p.public_tests
                 ],
                 "private_tests": [
-                    {"input": t.input, "output": t.output, "testtype": t.testtype}
+                    {"input": t.input, "output": t.output, "testtype": t.testtype, "metadata": t.metadata}
                     for t in p.private_tests
                 ],
+                "metadata": p.metadata,
             })
         with open(self.cache_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -311,11 +324,11 @@ class LCBLoader:
         problems = []
         for d in data:
             pub = [
-                TestCase(t["input"], t["output"], t.get("testtype","stdin"), True)
+                TestCase(t["input"], t["output"], t.get("testtype","stdin"), True, t.get("metadata", {}))
                 for t in d.get("public_tests", [])
             ]
             priv = [
-                TestCase(t["input"], t["output"], t.get("testtype","stdin"), False)
+                TestCase(t["input"], t["output"], t.get("testtype","stdin"), False, t.get("metadata", {}))
                 for t in d.get("private_tests", [])
             ]
             problems.append(Problem(
@@ -329,6 +342,7 @@ class LCBLoader:
                 is_stdin=d.get("is_stdin", True),
                 public_tests=pub,
                 private_tests=priv,
+                metadata=d.get("metadata", {}),
             ))
         return problems
 

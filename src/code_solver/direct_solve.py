@@ -130,8 +130,20 @@ def main():
     # ── 主循环 ────────────────────────────────────────────────────────────────
     total = 0
     right = 0
+    stdin_total = 0
+    functional_total = 0
+    stdin_right = 0
+    functional_right = 0
+
+    output_path = "/data0/xjh/code-solver/direct_solve_codes"
+    os.makedirs(output_path, exist_ok=True)
+
     for i, problem in enumerate(problems):
         total += 1
+        if problem.is_stdin:
+            stdin_total += 1
+        else:
+            functional_total += 1
         log.info(f"\n{'='*60}")
         log.info(f"Problem {i+1}/{len(problems)}: [{problem.problem_id}] {problem.title} ({problem.difficulty})")
 
@@ -140,15 +152,23 @@ def main():
         response = llm.chat_simple(system=_SYSTEM_PROMPT, user=user_prompt, temperature=0.2)
         code = extract_code(response)
 
+        with open(os.path.join(output_path, f"{problem.problem_id}.py"), "w") as f:
+            f.write(code)
+
         suite_result = executor.run_suite(code, problem.private_tests)
         if suite_result.all_passed:
             right += 1
+            if problem.is_stdin:
+                stdin_right += 1
+            else:
+                functional_right += 1
 
-        res = {"problem_id": problem.problem_id, "passed": suite_result.all_passed, "pass_rate": suite_result.pass_rate}
+        res = {"problem_id": problem.problem_id, "passed": suite_result.all_passed, "pass_rate": suite_result.pass_rate, "is_stdin": problem.is_stdin}
         print(res)
 
     print("right/total:", f"{right}/{total}")
-
+    print("stdin_right/stdin_total:", f"{stdin_right}/{stdin_total}")
+    print("functional_right/functional_total:", f"{functional_right}/{functional_total}")
 
 
 if __name__ == "__main__":

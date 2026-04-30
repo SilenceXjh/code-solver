@@ -133,6 +133,8 @@ def main():
     # ── 主循环 ────────────────────────────────────────────────────────────────
     total = 0
     right = 0
+    output_path = "/data0/xjh/code-solver/cot_solve_codes"
+    os.makedirs(output_path, exist_ok=True)
     for i, problem in enumerate(problems):
         total += 1
         log.info(f"\n{'='*60}")
@@ -142,6 +144,9 @@ def main():
 
         response = llm.chat_simple(system=_SYSTEM_PROMPT, user=user_prompt, temperature=0.2)
         code = extract_code(response)
+
+        with open(os.path.join(output_path, f"{problem.problem_id}.py"), "w") as f:
+            f.write(code)
 
         suite_result = executor.run_suite(code, problem.private_tests)
         if suite_result.all_passed:

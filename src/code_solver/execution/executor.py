@@ -1,38 +1,321 @@
 """
 LCB 沙箱代码执行器
 
+基于 LiveCodeBench 官方评测代码重写，使用 exec + signal 超时机制。
 LCB 题目有两种格式：
   1. stdin  型：从 stdin 读输入，结果打印到 stdout（AtCoder/Codeforces 风格）
   2. functional 型：实现指定函数签名，返回值与期望比较（LeetCode 风格）
-
-判断依据：TestCase.testtype 字段（"stdin" 或 "functional"）
-
-执行方式：
-  两种格式均在独立子进程中运行（subprocess），避免状态污染。
-  functional 型通过动态生成 wrapper 代码将函数调用转为 stdout 输出来统一接口。
 """
 
+import ast
+import faulthandler
 import json
-import subprocess
+import signal
 import sys
-import textwrap
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from decimal import Decimal
+from enum import Enum
+from io import StringIO
+from types import ModuleType
 from typing import Optional
+import multiprocessing
 
 
-# ── 测试用例 ──────────────────────────────────────────────────────────────────
+IMPORT_STRING = """from string import *
+from re import *
+from datetime import *
+from collections import *
+from heapq import *
+from bisect import *
+from copy import *
+from math import *
+from random import *
+from statistics import *
+from itertools import *
+from functools import *
+from operator import *
+from io import *
+from sys import *
+from json import *
+from builtins import *
+from typing import *
+import string
+import re
+import datetime
+import collections
+import heapq
+import bisect
+import copy
+import math
+import random
+import statistics
+import itertools
+import functools
+import operator
+import io
+import sys
+import json
+sys.setrecursionlimit(50000)
+"""
+
+
+class CODE_TYPE(Enum):
+    call_based = 0
+    standard_input = 1
+
+
+class TimeoutException(Exception):
+    pass
+
+
+def timeout_handler(signum, frame):
+    raise TimeoutException
+
+
+class Capturing(list):
+    def __enter__(self):
+        self._stdout = sys.stdout
+        sys.stdout = self._stringio = StringIO()
+        self._stringio.close = lambda x: 1
+        return self
+
+    def __exit__(self, *args):
+        self.append(self._stringio.getvalue())
+        del self._stringio
+        sys.stdout = self._stdout
+
+
+class MockStdinWithBuffer:
+    def __init__(self, inputs: str):
+        self.inputs = inputs
+        self._stringio = StringIO(inputs)
+        self.buffer = MockBuffer(inputs)
+
+    def read(self, *args):
+        return self.inputs
+
+    def readline(self, *args):
+        return self._stringio.readline(*args)
+
+    def readlines(self, *args):
+        return self.inputs.split("\n")
+
+    def __getattr__(self, name):
+        return getattr(self._stringio, name)
+
+
+class MockBuffer:
+    def __init__(self, inputs: str):
+        self.inputs = inputs.encode("utf-8")
+
+    def read(self, *args):
+        return self.inputs
+
+    def readline(self, *args):
+        return self.inputs.split(b"\n")[0] + b"\n"
+
+
+def clean_if_name(code: str) -> str:
+    try:
+        astree = ast.parse(code)
+        last_block = astree.body[-1]
+        if isinstance(last_block, ast.If):
+            condition = last_block.test
+            if ast.unparse(condition).strip() == "__name__ == '__main__'":
+                code = (
+                    ast.unparse(astree.body[:-1]) + "\n" + ast.unparse(last_block.body)
+                )
+    except:
+        pass
+    return code
+
+
+def make_function(code: str) -> str:
+    try:
+        import_stmts = []
+        all_other_stmts = []
+        astree = ast.parse(code)
+        for stmt in astree.body:
+            if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+                import_stmts.append(stmt)
+            else:
+                all_other_stmts.append(stmt)
+
+        function_ast = ast.FunctionDef(
+            name="wrapped_function",
+            args=ast.arguments(
+                posonlyargs=[], args=[], kwonlyargs=[], kw_defaults=[], defaults=[]
+            ),
+            body=all_other_stmts,
+            decorator_list=[],
+            lineno=-1,
+        )
+        main_code = (
+            IMPORT_STRING
+            + "\n"
+            + ast.unparse(import_stmts)
+            + "\n"
+            + ast.unparse(function_ast)
+        )
+        return main_code
+    except Exception as e:
+        return code
+
+
+def call_method(method, inputs):
+    if isinstance(inputs, list):
+        inputs = "\n".join(inputs)
+
+    mock_stdin = MockStdinWithBuffer(inputs)
+
+    def _inner_call_method(_method):
+        try:
+            return _method()
+        except SystemExit as e:
+            pass
+        finally:
+            pass
+
+    old_stdin = sys.stdin
+    try:
+        sys.stdin = mock_stdin
+        return _inner_call_method(method)
+    finally:
+        sys.stdin = old_stdin
+
+
+class _patch:
+    def __init__(self, target, value):
+        self.target = target
+        self.value = value
+        self.old = None
+
+    def __enter__(self):
+        parts = self.target.split(".")
+        obj = sys
+        for part in parts[:-1]:
+            obj = getattr(obj, part)
+        self.old = getattr(obj, parts[-1])
+        setattr(obj, parts[-1], self.value)
+        return self
+
+    def __exit__(self, *args):
+        parts = self.target.split(".")
+        obj = sys
+        for part in parts[:-1]:
+            obj = getattr(obj, part)
+        setattr(obj, parts[-1], self.old)
+
+
+def get_function(compiled_sol, fn_name: str):
+    try:
+        assert hasattr(compiled_sol, fn_name)
+        return getattr(compiled_sol, fn_name)
+    except Exception:
+        return None
+
+
+def compile_code(code: str, timeout: int):
+    signal.alarm(timeout)
+    try:
+        tmp_sol = ModuleType("tmp_sol", "")
+        exec(code, tmp_sol.__dict__)
+        if "class Solution" in code:
+            compiled_sol = tmp_sol.Solution()
+        else:
+            compiled_sol = tmp_sol
+        assert compiled_sol is not None
+    finally:
+        signal.alarm(0)
+    return compiled_sol
+
+
+def convert_line_to_decimals(line: str):
+    try:
+        decimal_line = [Decimal(elem) for elem in line.split()]
+    except:
+        return False, []
+    return True, decimal_line
+
+
+def get_stripped_lines(val: str):
+    val = val.strip()
+    return [val_line.strip() for val_line in val.split("\n")]
+
+
+def reliability_guard():
+    faulthandler.disable()
+
+    import builtins
+
+    builtins.quit = None
+
+    import os
+
+    os.environ["OMP_NUM_THREADS"] = "1"
+
+    os.kill = None
+    os.system = None
+    os.putenv = None
+    os.remove = None
+    os.removedirs = None
+    os.rmdir = None
+    os.fchdir = None
+    os.fork = None
+    os.fexecve = None
+    os.spawnl = None
+    os.spawnle = None
+    os.spawnv = None
+    os.spawnve = None
+    os.execl = None
+    os.execle = None
+    os.execlp = None
+    os.execlpe = None
+    os.execv = None
+    os.execve = None
+    os.execvp = None
+    os.execvpe = None
+
+    import shutil
+
+    shutil.rmtree = None
+    shutil.move = None
+    shutil.copy = None
+    shutil.copy2 = None
+    shutil.copyfile = None
+
+    import subprocess
+
+    subprocess.Popen = None
+    subprocess.call = None
+    subprocess.run = None
+    subprocess.getoutput = None
+    subprocess.getstatusoutput = None
+
+    import importlib
+
+    importlib.invalidate_caches()
+
+
+def truncatefn(s, length=300):
+    if isinstance(s, str):
+        pass
+    else:
+        s = str(s)
+    if len(s) <= length:
+        return s
+    return s[: length // 2] + "...(truncated) ..." + s[-length // 2:]
+
 
 @dataclass
 class TestCase:
-    """LCB 单个测试用例"""
-    input: str                  # stdin 型：原始输入字符串；functional 型：JSON 序列化的参数
-    output: str                 # 期望输出（字符串或 JSON）
-    testtype: str = "stdin"     # "stdin" | "functional"
+    input: str
+    output: str
+    testtype: str = "stdin"
     is_public: bool = True
+    metadata: dict = field(default_factory=dict)
 
-
-# ── 执行结果 ──────────────────────────────────────────────────────────────────
 
 @dataclass
 class ExecutionResult:
@@ -44,25 +327,26 @@ class ExecutionResult:
     elapsed: float
     expected: str = ""
     actual: str = ""
+    error_code: int = 0
+    error_message: str = ""
 
     @property
     def error_type(self) -> str:
         if self.timed_out:
             return "time_limit_exceeded"
         if self.exit_code != 0:
-            err = self.stderr
             for kw, et in [
-                ("SyntaxError",     "syntax_error"),
-                ("IndentationError","syntax_error"),
-                ("NameError",       "name_error"),
-                ("AttributeError",  "attribute_error"),
-                ("TypeError",       "type_error"),
-                ("IndexError",      "index_error"),
-                ("KeyError",        "key_error"),
-                ("RecursionError",  "recursion_error"),
-                ("MemoryError",     "memory_error"),
+                ("SyntaxError", "syntax_error"),
+                ("IndentationError", "syntax_error"),
+                ("NameError", "name_error"),
+                ("AttributeError", "attribute_error"),
+                ("TypeError", "type_error"),
+                ("IndexError", "index_error"),
+                ("KeyError", "key_error"),
+                ("RecursionError", "recursion_error"),
+                ("MemoryError", "memory_error"),
             ]:
-                if kw in err:
+                if kw in self.stderr:
                     return et
             return "runtime_error"
         if not self.passed:
@@ -90,6 +374,8 @@ class SuiteResult:
     results: list[ExecutionResult]
     passed: int
     total: int
+    execution_time: float = 0.0
+    errors: list = field(default_factory=list)
 
     @property
     def all_passed(self) -> bool:
@@ -115,18 +401,8 @@ class SuiteResult:
         return s
 
 
-# ── 执行器 ────────────────────────────────────────────────────────────────────
-
 class Executor:
-    """
-    统一的 LCB 代码执行器
-
-    自动根据 TestCase.testtype 选择执行方式：
-      - "stdin"      → subprocess + stdin 重定向
-      - "functional" → 生成 wrapper 代码，在 subprocess 中调用函数并打印结果
-    """
-
-    def __init__(self, timeout: int = 10):
+    def __init__(self, timeout: int = 6):
         self.timeout = timeout
 
     def run(self, code: str, test_case: TestCase) -> ExecutionResult:
@@ -141,11 +417,61 @@ class Executor:
         test_cases: list[TestCase],
         stop_on_first_failure: bool = False,
     ) -> SuiteResult:
+        manager = multiprocessing.Manager()
+        result_list = manager.list()
+        p = multiprocessing.Process(
+            target=self._temp_run,
+            args=(code, test_cases, result_list),
+        )
+        p.start()
+        p.join()
+        if p.is_alive():
+            p.kill()
+        if not result_list:
+            return SuiteResult(
+                results=[ExecutionResult(
+                    passed=False, stdout="", stderr="[SKIPPED]",
+                    exit_code=0, timed_out=False, elapsed=0.0,
+                    expected="", actual="[SKIPPED]",
+                    error_code=-1, error_message="Skipped",
+                )] , passed=0, total=len(test_cases), execution_time=0.0, errors=["Skipped"],
+            )
+        return result_list[0]
+
+
+    def _temp_run(self, code, test_cases, result_list):
+        res = self._run_suite(code, test_cases)
+        result_list.append(res)
+
+    def _run_suite(
+        self,
+        code: str,
+        test_cases: list[TestCase],
+        stop_on_first_failure: bool = False,
+    ) -> SuiteResult:
         results: list[ExecutionResult] = []
         passed = 0
-        for tc in test_cases:
+        total_execution_time = 0.0
+        all_errors = []
+
+        reliability_guard()
+
+        for idx, tc in enumerate(test_cases):
             r = self.run(code, tc)
             results.append(r)
+            total_execution_time += r.elapsed
+
+            if r.error_code != 0:
+                all_errors.append({
+                    "index": idx,
+                    "inputs": truncatefn(tc.input),
+                    "expected": truncatefn(tc.output),
+                    "output": truncatefn(r.actual) if r.actual else None,
+                    "error": truncatefn(r.stderr) if r.stderr else None,
+                    "error_code": r.error_code,
+                    "error_message": r.error_message or r.error_type,
+                })
+
             if r.passed:
                 passed += 1
             elif stop_on_first_failure:
@@ -154,196 +480,405 @@ class Executor:
                         passed=False, stdout="", stderr="[SKIPPED]",
                         exit_code=0, timed_out=False, elapsed=0.0,
                         expected=rem.output, actual="[SKIPPED]",
+                        error_code=-1, error_message="Skipped",
                     ))
                 break
-        return SuiteResult(results=results, passed=passed, total=len(test_cases))
 
-    # ── stdin 执行 ────────────────────────────────────────────────────────────
+        return SuiteResult(
+            results=results,
+            passed=passed,
+            total=len(test_cases),
+            execution_time=total_execution_time,
+            errors=all_errors,
+        )
 
     def _run_stdin(self, code: str, tc: TestCase) -> ExecutionResult:
-        t0 = time.monotonic()
+        code = clean_if_name(code)
+        code = make_function(code)
+
+        compiled_sol = None
+        method = None
+
         try:
-            proc = subprocess.run(
-                [sys.executable, "-c", code],
-                input=tc.input,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout,
-            )
-            elapsed = time.monotonic() - t0
-            actual = proc.stdout.strip()
-            expected = tc.output.strip()
-            passed = _compare(actual, expected)
+            compiled_sol = compile_code(code, self.timeout)
+        except TimeoutException:
             return ExecutionResult(
-                passed=passed, stdout=proc.stdout, stderr=proc.stderr,
-                exit_code=proc.returncode, timed_out=False, elapsed=elapsed,
-                expected=expected, actual=actual,
-            )
-        except subprocess.TimeoutExpired:
-            return ExecutionResult(
-                passed=False, stdout="", stderr="",
-                exit_code=-1, timed_out=True, elapsed=self.timeout,
-                expected=tc.output.strip(), actual="[TIMEOUT]",
+                passed=False, stdout="", stderr="timeout",
+                exit_code=-1, timed_out=True, elapsed=float(self.timeout),
+                expected=tc.output, actual="[TIMEOUT]",
+                error_code=-3, error_message="Time Limit Exceeded",
             )
         except Exception as e:
             return ExecutionResult(
                 passed=False, stdout="", stderr=str(e),
-                exit_code=-1, timed_out=False, elapsed=time.monotonic() - t0,
-                expected=tc.output.strip(), actual="[ERROR]",
+                exit_code=-1, timed_out=False, elapsed=0.0,
+                expected=tc.output, actual="[COMPILE ERROR]",
+                error_code=-4, error_message=f"Compile Error: {e}",
             )
 
-    # ── functional 执行 ───────────────────────────────────────────────────────
+        if compiled_sol is None:
+            return ExecutionResult(
+                passed=False, stdout="", stderr="Failed to compile",
+                exit_code=-1, timed_out=False, elapsed=0.0,
+                expected=tc.output, actual="[COMPILE ERROR]",
+                error_code=-4, error_message="Failed to compile code",
+            )
 
-    def _run_functional(self, code: str, tc: TestCase) -> ExecutionResult:
-        """
-        functional 型执行流程：
-          1. 解析 tc.input（JSON）得到函数参数
-          2. 提取函数名（从 code 或 starter_code）
-          3. 生成 wrapper：exec 用户代码 → 调用函数 → print(json.dumps(result))
-          4. 在子进程执行 wrapper，比较 JSON 化输出与期望
-        """
-        wrapper = self._build_functional_wrapper(code, tc.input)
-        t0 = time.monotonic()
+        method = get_function(compiled_sol, "wrapped_function")
+        if method is None:
+            return ExecutionResult(
+                passed=False, stdout="", stderr="wrapped_function not found",
+                exit_code=-1, timed_out=False, elapsed=0.0,
+                expected=tc.output, actual="[FUNCTION NOT FOUND]",
+                error_code=-4, error_message="Function wrapped_function not found",
+            )
+
+        faulthandler.enable()
+        signal.signal(signal.SIGALRM, timeout_handler)
+        captured_output = []
+        total_execution_time = 0.0
+
         try:
-            proc = subprocess.run(
-                [sys.executable, "-c", wrapper],
-                capture_output=True,
-                text=True,
-                timeout=self.timeout,
-            )
-            elapsed = time.monotonic() - t0
-            actual_raw = proc.stdout.strip()
-            expected_raw = tc.output.strip()
+            signal.alarm(self.timeout)
+            with Capturing() as captured:
+                try:
+                    start = time.time()
+                    call_method(method, tc.input)
+                    total_execution_time = time.time() - start
+                    signal.alarm(0)
+                except TimeoutException:
+                    signal.alarm(0)
+                    return ExecutionResult(
+                        passed=False, stdout="", stderr="timeout",
+                        exit_code=-1, timed_out=True, elapsed=float(self.timeout),
+                        expected=tc.output, actual="[TIMEOUT]",
+                        error_code=-3, error_message="Time Limit Exceeded",
+                    )
+                except Exception as e:
+                    signal.alarm(0)
+                    error_msg = repr(e)
+                    if "timeoutexception" in error_msg.lower():
+                        return ExecutionResult(
+                            passed=False, stdout="", stderr=error_msg,
+                            exit_code=-1, timed_out=True, elapsed=float(self.timeout),
+                            expected=tc.output, actual="[TIMEOUT]",
+                            error_code=-3, error_message="Time Limit Exceeded",
+                        )
+                    return ExecutionResult(
+                        passed=False, stdout="", stderr=error_msg,
+                        exit_code=-1, timed_out=False, elapsed=0.0,
+                        expected=tc.output, actual="[RUNTIME ERROR]",
+                        error_code=-4, error_message=f"Runtime Error: {e}",
+                    )
+                finally:
+                    signal.alarm(0)
+                    faulthandler.disable()
 
-            if proc.returncode != 0:
+            if captured:
+                prediction = captured[0]
+            else:
+                prediction = ""
+
+        except Exception as e:
+            return ExecutionResult(
+                passed=False, stdout="", stderr=str(e),
+                exit_code=-1, timed_out=False, elapsed=0.0,
+                expected=tc.output, actual="[ERROR]",
+                error_code=-4, error_message=f"Error: {e}",
+            )
+
+        stripped_prediction_lines = get_stripped_lines(prediction)
+        stripped_gt_out_lines = get_stripped_lines(tc.output)
+
+        if len(stripped_prediction_lines) != len(stripped_gt_out_lines):
+            return ExecutionResult(
+                passed=False,
+                stdout=prediction,
+                stderr="",
+                exit_code=0,
+                timed_out=False,
+                elapsed=total_execution_time,
+                expected=tc.output,
+                actual=prediction,
+                error_code=-2,
+                error_message=f"Wrong answer: mismatched output length (expected {len(stripped_gt_out_lines)} lines, got {len(stripped_prediction_lines)})",
+            )
+
+        for output_line_idx, (pred_line, gt_line) in enumerate(
+            zip(stripped_prediction_lines, stripped_gt_out_lines)
+        ):
+            if pred_line == gt_line:
+                continue
+
+            success, decimal_pred = convert_line_to_decimals(pred_line)
+            if not success:
                 return ExecutionResult(
-                    passed=False, stdout=proc.stdout, stderr=proc.stderr,
-                    exit_code=proc.returncode, timed_out=False, elapsed=elapsed,
-                    expected=expected_raw, actual=actual_raw,
+                    passed=False,
+                    stdout=prediction,
+                    stderr="",
+                    exit_code=0,
+                    timed_out=False,
+                    elapsed=total_execution_time,
+                    expected=tc.output,
+                    actual=prediction,
+                    error_code=-2,
+                    error_message=f"Wrong answer at line {output_line_idx}: {truncatefn(pred_line)} != {truncatefn(gt_line)}",
                 )
 
-            passed = _compare_functional(actual_raw, expected_raw)
+            success, decimal_gt = convert_line_to_decimals(gt_line)
+            if not success:
+                return ExecutionResult(
+                    passed=False,
+                    stdout=prediction,
+                    stderr="",
+                    exit_code=0,
+                    timed_out=False,
+                    elapsed=total_execution_time,
+                    expected=tc.output,
+                    actual=prediction,
+                    error_code=-2,
+                    error_message=f"Wrong answer at line {output_line_idx}: {truncatefn(pred_line)} != {truncatefn(gt_line)}",
+                )
+
+            if decimal_pred != decimal_gt:
+                return ExecutionResult(
+                    passed=False,
+                    stdout=prediction,
+                    stderr="",
+                    exit_code=0,
+                    timed_out=False,
+                    elapsed=total_execution_time,
+                    expected=tc.output,
+                    actual=prediction,
+                    error_code=-2,
+                    error_message=f"Wrong answer at line {output_line_idx}: {truncatefn(pred_line)} != {truncatefn(gt_line)}",
+                )
+
+        return ExecutionResult(
+            passed=True,
+            stdout=prediction,
+            stderr="",
+            exit_code=0,
+            timed_out=False,
+            elapsed=total_execution_time,
+            expected=tc.output,
+            actual=prediction,
+            error_code=0,
+            error_message="",
+        )
+
+    def _run_functional(self, code: str, tc: TestCase) -> ExecutionResult:
+        code = IMPORT_STRING + "\n\n" + code
+
+        try:
+            compiled_sol = compile_code(code, self.timeout)
+        except TimeoutException:
             return ExecutionResult(
-                passed=passed, stdout=proc.stdout, stderr=proc.stderr,
-                exit_code=proc.returncode, timed_out=False, elapsed=elapsed,
-                expected=expected_raw, actual=actual_raw,
-            )
-        except subprocess.TimeoutExpired:
-            return ExecutionResult(
-                passed=False, stdout="", stderr="",
-                exit_code=-1, timed_out=True, elapsed=self.timeout,
-                expected=tc.output.strip(), actual="[TIMEOUT]",
+                passed=False, stdout="", stderr="timeout",
+                exit_code=-1, timed_out=True, elapsed=float(self.timeout),
+                expected=tc.output, actual="[TIMEOUT]",
+                error_code=-3, error_message="Time Limit Exceeded",
             )
         except Exception as e:
             return ExecutionResult(
                 passed=False, stdout="", stderr=str(e),
-                exit_code=-1, timed_out=False, elapsed=time.monotonic() - t0,
-                expected=tc.output.strip(), actual="[ERROR]",
+                exit_code=-1, timed_out=False, elapsed=0.0,
+                expected=tc.output, actual="[COMPILE ERROR]",
+                error_code=-4, error_message=f"Compile Error: {e}",
             )
 
-    def _build_functional_wrapper(self, code: str, input_json: str) -> str:
-        """
-        构建 functional 型执行的 wrapper 代码。
-        用 base64 编码传递用户代码和输入，避免引号/换行冲突。
-        """
-        import base64
-        code_b64  = base64.b64encode(code.encode()).decode()
-        input_b64 = base64.b64encode(input_json.encode()).decode()
+        if compiled_sol is None:
+            return ExecutionResult(
+                passed=False, stdout="", stderr="Failed to compile",
+                exit_code=-1, timed_out=False, elapsed=0.0,
+                expected=tc.output, actual="[COMPILE ERROR]",
+                error_code=-4, error_message="Failed to compile code",
+            )
 
-        wrapper = f'''\
-import json, sys, base64, types
+        fn_name = None
 
-# 解码用户代码和输入
-_user_code  = base64.b64decode("{code_b64}").decode()
-_input_json = base64.b64decode("{input_b64}").decode()
+        if isinstance(tc.metadata, dict):
+            fn_name = tc.metadata.get("func_name")
 
-# 执行用户代码
-_user_ns = {{}}
-exec(_user_code, _user_ns)
+        assert fn_name, "function name not found in metadata"
 
-# 找到可调用函数
-_fn = None
-# 优先找 Solution 类
-if "Solution" in _user_ns and isinstance(_user_ns["Solution"], type):
-    _sol = _user_ns["Solution"]()
-    _methods = [
-        k for k in dir(_sol)
-        if not k.startswith("_") and callable(getattr(_sol, k))
-    ]
-    if _methods:
-        _fn = getattr(_sol, _methods[0])
+        # if fn_name is None:
+        #     return ExecutionResult(
+        #         passed=False, stdout="", stderr="No function found",
+        #         exit_code=-1, timed_out=False, elapsed=0.0,
+        #         expected=tc.output, actual="[FUNCTION NOT FOUND]",
+        #         error_code=-4, error_message="No callable function found in code",
+        #     )
 
-# 退而求其次找独立函数
-if _fn is None:
-    for _k, _v in _user_ns.items():
-        if isinstance(_v, types.FunctionType) and not _k.startswith("_"):
-            _fn = _v
-            break
+        method = get_function(compiled_sol, fn_name)
+        if method is None:
+            return ExecutionResult(
+                passed=False, stdout="", stderr=f"function {fn_name} not found",
+                exit_code=-1, timed_out=False, elapsed=0.0,
+                expected=tc.output, actual="[FUNCTION NOT FOUND]",
+                error_code=-4, error_message=f"Function {fn_name} not found",
+            )
 
-if _fn is None:
-    raise RuntimeError("No callable found in user code")
+        gt_inp = [json.loads(line) for line in tc.input.split("\n")]
+        gt_out = json.loads(tc.output)
 
-# 解析输入并调用
-_args = json.loads(_input_json)
-if isinstance(_args, list):
-    _result = _fn(*_args)
-elif isinstance(_args, dict):
-    _result = _fn(**_args)
-else:
-    _result = _fn(_args)
+        faulthandler.enable()
+        signal.signal(signal.SIGALRM, timeout_handler)
+        total_execution_time = 0.0
 
-print(json.dumps(_result, default=str))
-'''
-        return wrapper
-
-
-# ── 输出比较 ──────────────────────────────────────────────────────────────────
-
-def _compare(actual: str, expected: str) -> bool:
-    """stdin 型：字符串比较，支持浮点和多行归一化"""
-    a, e = actual.strip(), expected.strip()
-    if a == e:
-        return True
-    a_lines = [l.strip() for l in a.splitlines() if l.strip()]
-    e_lines = [l.strip() for l in e.splitlines() if l.strip()]
-    if a_lines == e_lines:
-        return True
-    if len(a_lines) == 1 and len(e_lines) == 1:
         try:
-            return abs(float(a_lines[0]) - float(e_lines[0])) < 1e-6
-        except ValueError:
-            pass
-    return False
+            # print("gt_inp:", gt_inp, type(gt_inp))
+            # print("gt_out:", gt_out, type(gt_out))
+
+            signal.alarm(self.timeout)
+            start = time.time()
+            # prediction = method(*gt_inp) if isinstance(gt_inp, list) else method(gt_inp)
+            prediction = method(*gt_inp)
+            total_execution_time += time.time() - start
+            signal.alarm(0)
+        except TimeoutException:
+            signal.alarm(0)
+            return ExecutionResult(
+                passed=False, stdout="", stderr="timeout",
+                exit_code=-1, timed_out=True, elapsed=float(self.timeout),
+                expected=tc.output, actual="[TIMEOUT]",
+                error_code=-3, error_message="Time Limit Exceeded",
+            )
+        except SystemExit:
+            signal.alarm(0)
+            total_execution_time += time.time() - start
+            return ExecutionResult(
+                passed=False, stdout="", stderr="",
+                exit_code=-1, timed_out=False, elapsed=total_execution_time,
+                expected=tc.output, actual="[RUNTIME ERROR]",
+                error_code=-4, error_message=f"Runtime Error: {e}",
+            )
+        except Exception as e:
+            signal.alarm(0)
+            error_msg = repr(e)
+            if "timeoutexception" in error_msg.lower():
+                return ExecutionResult(
+                    passed=False, stdout="", stderr=error_msg,
+                    exit_code=-1, timed_out=True, elapsed=float(self.timeout),
+                    expected=tc.output, actual="[TIMEOUT]",
+                    error_code=-3, error_message="Time Limit Exceeded",
+                )
+            return ExecutionResult(
+                passed=False, stdout="", stderr=error_msg,
+                exit_code=-1, timed_out=False, elapsed=total_execution_time,
+                expected=tc.output, actual="[RUNTIME ERROR]",
+                error_code=-4, error_message=f"Runtime Error: {e}",
+            )
+        finally:
+            faulthandler.disable()
+
+        if isinstance(prediction, tuple):
+            prediction = list(prediction)
+
+        tmp_result = prediction == gt_out
+
+        if not tmp_result:
+            return ExecutionResult(
+                passed=False,
+                stdout="",
+                stderr="",
+                exit_code=0,
+                timed_out=False,
+                elapsed=total_execution_time,
+                expected=json.dumps(gt_out, default=str),
+                actual=json.dumps(prediction, default=str),
+                error_code=-2,
+                error_message="Wrong Answer",
+            )
+
+        return ExecutionResult(
+            passed=True,
+            stdout="",
+            stderr="",
+            exit_code=0,
+            timed_out=False,
+            elapsed=total_execution_time,
+            expected=tc.output,
+            actual=json.dumps(prediction, default=str),
+            error_code=0,
+            error_message="",
+        )
 
 
-def _compare_functional(actual_json: str, expected_json: str) -> bool:
+def run_test(sample, test=None, timeout=6):
     """
-    functional 型：先尝试 JSON 反序列化后比较，失败则字符串比较。
-    处理常见情况：
-      - None vs "null"
-      - 列表顺序（如果题目不要求顺序则排序比较）
-      - 浮点近似
+    官方 LiveCodeBench run_test 接口
+    sample: 包含 input_output 的字典
+    test: 要测试的代码字符串
+    timeout: 超时时间（秒）
     """
-    actual_json = actual_json.strip()
-    expected_json = expected_json.strip()
-    if actual_json == expected_json:
-        return True
+    signal.signal(signal.SIGALRM, timeout_handler)
+    reliability_guard()
+
     try:
-        a = json.loads(actual_json)
-        e = json.loads(expected_json)
-        if a == e:
-            return True
-        # 浮点近似
-        if isinstance(a, float) and isinstance(e, (int, float)):
-            return abs(a - e) < 1e-6
-        if isinstance(e, float) and isinstance(a, (int, float)):
-            return abs(a - e) < 1e-6
-        # 列表：尝试排序后比较（适用于无序结果）
-        if isinstance(a, list) and isinstance(e, list):
-            try:
-                return sorted(str(x) for x in a) == sorted(str(x) for x in e)
-            except Exception:
-                pass
-        return False
-    except (json.JSONDecodeError, TypeError):
-        return _compare(actual_json, expected_json)
+        in_outs = json.loads(sample["input_output"])
+    except (ValueError, KeyError):
+        in_outs = None
+
+    if in_outs:
+        if in_outs.get("fn_name") is None:
+            which_type = CODE_TYPE.standard_input
+            method_name = None
+        else:
+            which_type = CODE_TYPE.call_based
+            method_name = in_outs["fn_name"]
+    else:
+        which_type = CODE_TYPE.standard_input
+        method_name = None
+
+    if test is None:
+        return in_outs, {"error": "no test code provided"}
+
+    executor = Executor(timeout=timeout)
+
+    if which_type == CODE_TYPE.call_based:
+        test_cases = [
+            TestCase(
+                input=json.dumps(inp),
+                output=json.dumps(out),
+                testtype="functional",
+            )
+            for inp, out in zip(in_outs["inputs"], in_outs["outputs"])
+        ]
+        results, metadata = [], {"errors": []}
+        for i, tc in enumerate(test_cases):
+            r = executor.run(test, tc)
+            results.append(r.passed if r.passed else r.error_code)
+            if r.error_code != 0:
+                metadata["errors"].append({
+                    "index": i,
+                    "inputs": truncatefn(tc.input),
+                    "expected": truncatefn(tc.output),
+                    "output": truncatefn(r.actual),
+                    "error_code": r.error_code,
+                    "error_message": r.error_message or r.error_type,
+                })
+        metadata["execution_time"] = sum(r.elapsed for r in executor.run_suite(test, test_cases).results)
+        return results, metadata
+
+    elif which_type == CODE_TYPE.standard_input:
+        test_cases = [
+            TestCase(input=inp, output=out, testtype="stdin")
+            for inp, out in zip(in_outs["inputs"], in_outs["outputs"])
+        ]
+        results, metadata = [], {"errors": []}
+        for i, tc in enumerate(test_cases):
+            r = executor.run(test, tc)
+            results.append(r.passed if r.passed else r.error_code)
+            if r.error_code != 0:
+                metadata["errors"].append({
+                    "index": i,
+                    "inputs": truncatefn(tc.input),
+                    "expected": truncatefn(tc.output),
+                    "output": truncatefn(r.actual) if r.actual else None,
+                    "error": truncatefn(r.stderr) if r.stderr else None,
+                    "error_code": r.error_code,
+                    "error_message": r.error_message or r.error_type,
+                })
+        metadata["execution_time"] = sum(r.elapsed for r in executor.run_suite(test, test_cases).results)
+        return results, metadata
