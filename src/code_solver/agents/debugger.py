@@ -12,8 +12,8 @@ Debugger Agent
 """
 
 import re
-from llm.base import LLMClient
-from tree.node import FaultReport
+from code_solver.llm.base import LLMClient
+from code_solver.tree.node import FaultReport
 
 _DEBUGGER_SYSTEM = """\
 You are an expert Python debugger and competitive programmer.

@@ -55,7 +55,7 @@ def build_search_engine(args):
         from llm.openai_client import OpenAIClient
         llm = OpenAIClient(
             model=args.model,
-            api_key=args.api_key or os.environ.get("OPENAI_API_KEY"),
+            api_key=args.api_key or os.environ.get("DEEPSEEK_API_KEY"),
             api_base=args.api_base,
         )
         log.info(f"Using model: {args.model}")
@@ -80,14 +80,14 @@ def build_search_engine(args):
         use_llm_verifier=not args.no_llm_verifier,
         use_adversarial_tester=not args.no_adversarial,
     )
-    return search, ex
+    return search, ex, llm
 
 
 def main():
     parser = argparse.ArgumentParser(description="CodeTree+ evaluation on LiveCodeBench")
 
     # LLM 配置
-    parser.add_argument("--model",     default="gpt-4o-mini")
+    parser.add_argument("--model",     default="deepseek-v4-flash")
     parser.add_argument("--api-key",   default=None)
     parser.add_argument("--api-base",  default=None, help="vLLM endpoint URL")
     parser.add_argument("--mock",      action="store_true", help="Use mock LLM for local testing")
@@ -112,15 +112,15 @@ def main():
 
     # 输出配置
     parser.add_argument("--output",   default="./results")
-    parser.add_argument("--run-name", default="codetree_plus")
+    parser.add_argument("--run-name", default="codetree_plus_ds")
 
     args = parser.parse_args()
 
     # ── 加载数据集 ────────────────────────────────────────────────────────────
     import sys
     sys.path.insert(0, str(Path(__file__).parent))
-    from data.lcb_loader import LCBLoader
-    from evaluation.evaluator import Evaluator
+    from code_solver.data.lcb_loader import LCBLoader
+    from code_solver.evaluation.evaluator import Evaluator
 
     loader = LCBLoader(
         release_version=args.lcb_version,
@@ -129,13 +129,14 @@ def main():
         max_problems=args.max_problems,
     )
     problems = loader.load()
+    problems = problems[100:]
 
     if not problems:
         log.error("No problems loaded. Check --lcb-version and cache.")
         return
 
     # ── 构造搜索引擎 ──────────────────────────────────────────────────────────
-    search, executor = build_search_engine(args)
+    search, executor, llm = build_search_engine(args)
     evaluator = Evaluator(executor, output_dir=args.output, run_name=args.run_name)
 
     # ── 主循环 ────────────────────────────────────────────────────────────────
@@ -145,15 +146,20 @@ def main():
         log.info(f"Problem {i+1}/{len(problems)}: [{problem.problem_id}] {problem.title} ({problem.difficulty})")
 
         # 断点续跑：跳过已完成的题目
-        cached = evaluator.already_done(problem.problem_id)
-        if cached:
-            log.info(f"  → Already done (passed_private={cached.passed_private}), skipping.")
-            all_results.append(cached)
-            continue
+        # cached = evaluator.already_done(problem.problem_id)
+        # if cached:
+        #     log.info(f"  → Already done (passed_private={cached.passed_private}), skipping.")
+        #     all_results.append(cached)
+        #     continue
 
         t0 = time.monotonic()
         try:
+            if hasattr(llm, "reset_usage"):
+                llm.reset_usage()
             search_result = search.solve(problem)
+            usage = llm.get_usage() if hasattr(llm, "get_usage") else {}
+            if usage:
+                search_result.tree.llm_usage = usage
             elapsed = time.monotonic() - t0
             prob_result = evaluator.evaluate_one(problem, search_result, elapsed)
             log.info(
@@ -161,6 +167,16 @@ def main():
                 f"private_rate={prob_result.private_pass_rate:.0%}, "
                 f"time={elapsed:.1f}s"
             )
+            if usage:
+                log.info(
+                    f"  → llm_calls={usage.get('calls', 0)}, "
+                    f"in_tokens={usage.get('input_tokens', 0)}, "
+                    f"in_cache_hit={usage.get('input_tokens_cache_hit', 0)}, "
+                    f"in_cache_miss={usage.get('input_tokens_cache_miss', 0)}, "
+                    f"out_tokens={usage.get('output_tokens', 0)}, "
+                    f"cost_usd={usage.get('cost_usd', 0.0):.6f}, "
+                    f"unpriced_calls={usage.get('unpriced_calls', 0)}"
+                )
         except Exception as e:
             log.error(f"  → ERROR: {e}", exc_info=True)
             elapsed = time.monotonic() - t0
@@ -172,6 +188,9 @@ def main():
                 accepted=False,
                 tree=SearchTree(problem_id=problem.problem_id),
             )
+            usage = llm.get_usage() if hasattr(llm, "get_usage") else {}
+            if usage:
+                empty.tree.llm_usage = usage
             prob_result = evaluator.evaluate_one(problem, empty, elapsed)
 
         all_results.append(prob_result)

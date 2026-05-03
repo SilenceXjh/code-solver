@@ -152,6 +152,8 @@ class SearchTree:
     # 已探索的算法范式（用于 Thinker 多样性约束）
     explored_paradigms: list[str] = field(default_factory=list)
 
+    llm_usage: dict = field(default_factory=dict)
+
     def add_node(self, node: Node) -> None:
         self.nodes.append(node)
         self.budget_used += 1
@@ -177,7 +179,7 @@ class SearchTree:
         return max(pool, key=lambda n: (n.critic_score, n.public_pass_rate))
 
     def stats(self) -> dict:
-        return {
+        stats = {
             "total_nodes": len(self.nodes),
             "budget_used": self.budget_used,
             "accepted": self.accepted_node is not None,
@@ -188,3 +190,6 @@ class SearchTree:
                 "pending":  sum(1 for n in self.nodes if n.status == NodeStatus.PENDING),
             },
         }
+        if self.llm_usage:
+            stats["llm_usage"] = self.llm_usage
+        return stats

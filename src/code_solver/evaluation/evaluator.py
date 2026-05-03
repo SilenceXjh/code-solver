@@ -39,6 +39,14 @@ class EvalReport:
     pass_at_1: float             # 通过 private tests 的比例
     critic_accept_rate: float    # Critic Accept 的比例（与 pass@1 的差距反映 Verifier 质量）
     by_difficulty: dict          # 各难度的 pass@1
+    total_cost_usd: float
+    avg_cost_usd: float
+    total_llm_calls: int
+    total_input_tokens: int
+    total_input_tokens_cache_hit: int
+    total_input_tokens_cache_miss: int
+    total_output_tokens: int
+    total_unpriced_calls: int
     results: list[ProblemResult]
 
     def print_summary(self):
@@ -48,6 +56,15 @@ class EvalReport:
         print(f"Total problems : {self.total}")
         print(f"Pass@1         : {self.pass_at_1:.1%}  ({int(self.pass_at_1 * self.total)}/{self.total})")
         print(f"Critic Accept  : {self.critic_accept_rate:.1%}")
+        print(f"LLM cost (USD) : total={self.total_cost_usd:.6f}, avg/problem={self.avg_cost_usd:.6f}")
+        print(
+            "LLM usage      : "
+            f"calls={self.total_llm_calls}, "
+            f"in_tok={self.total_input_tokens} "
+            f"(cache_hit={self.total_input_tokens_cache_hit}, cache_miss={self.total_input_tokens_cache_miss}), "
+            f"out_tok={self.total_output_tokens}, "
+            f"unpriced_calls={self.total_unpriced_calls}"
+        )
         print()
         print("By difficulty:")
         for diff, stats in sorted(self.by_difficulty.items()):
@@ -122,6 +139,29 @@ class Evaluator:
         passed  = sum(1 for r in results if r.passed_private)
         accepted = sum(1 for r in results if r.accepted_by_critic)
 
+        total_cost_usd = 0.0
+        total_llm_calls = 0
+        total_input_tokens = 0
+        total_input_tokens_cache_hit = 0
+        total_input_tokens_cache_miss = 0
+        total_output_tokens = 0
+        total_unpriced_calls = 0
+        for r in results:
+            usage = (r.search_stats or {}).get("llm_usage") or {}
+            try:
+                total_cost_usd += float(usage.get("cost_usd", 0.0) or 0.0)
+            except Exception:
+                pass
+            try:
+                total_llm_calls += int(usage.get("calls", 0) or 0)
+                total_input_tokens += int(usage.get("input_tokens", 0) or 0)
+                total_input_tokens_cache_hit += int(usage.get("input_tokens_cache_hit", 0) or 0)
+                total_input_tokens_cache_miss += int(usage.get("input_tokens_cache_miss", 0) or 0)
+                total_output_tokens += int(usage.get("output_tokens", 0) or 0)
+                total_unpriced_calls += int(usage.get("unpriced_calls", 0) or 0)
+            except Exception:
+                pass
+
         by_difficulty: dict[str, dict] = {}
         for r in results:
             d = r.difficulty
@@ -136,6 +176,14 @@ class Evaluator:
             pass_at_1=passed / total if total > 0 else 0.0,
             critic_accept_rate=accepted / total if total > 0 else 0.0,
             by_difficulty=by_difficulty,
+            total_cost_usd=total_cost_usd,
+            avg_cost_usd=(total_cost_usd / total) if total > 0 else 0.0,
+            total_llm_calls=total_llm_calls,
+            total_input_tokens=total_input_tokens,
+            total_input_tokens_cache_hit=total_input_tokens_cache_hit,
+            total_input_tokens_cache_miss=total_input_tokens_cache_miss,
+            total_output_tokens=total_output_tokens,
+            total_unpriced_calls=total_unpriced_calls,
             results=results,
         )
 
@@ -147,6 +195,14 @@ class Evaluator:
                 "pass_at_1": report.pass_at_1,
                 "critic_accept_rate": report.critic_accept_rate,
                 "by_difficulty": report.by_difficulty,
+                "llm_cost_usd_total": report.total_cost_usd,
+                "llm_cost_usd_avg_per_problem": report.avg_cost_usd,
+                "llm_calls_total": report.total_llm_calls,
+                "llm_input_tokens_total": report.total_input_tokens,
+                "llm_input_tokens_cache_hit_total": report.total_input_tokens_cache_hit,
+                "llm_input_tokens_cache_miss_total": report.total_input_tokens_cache_miss,
+                "llm_output_tokens_total": report.total_output_tokens,
+                "llm_unpriced_calls_total": report.total_unpriced_calls,
             }, f, indent=2)
 
         return report

@@ -4,9 +4,9 @@ import os
 from tqdm import tqdm
 import json
 
-code_dir = "/data0/xjh/code-solver/cot_solve_codes"
+code_dir = "/data0/xjh/code-solver/direct_solve_codes"
 
-output_file = "/data0/xjh/code-solver/eval_results.jsonl"
+output_file = "/data0/xjh/code-solver/eval_direct_results.jsonl"
 
 loader = LCBLoader()
 problems = loader.load()

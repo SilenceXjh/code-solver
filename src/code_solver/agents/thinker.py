@@ -16,8 +16,8 @@ import json
 import re
 from dataclasses import dataclass
 
-from llm.base import LLMClient
-from tree.node import FaultReport
+from code_solver.llm.base import LLMClient
+from code_solver.tree.node import FaultReport
 
 # ── 已知的算法范式标签 ────────────────────────────────────────────────────────
 

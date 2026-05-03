@@ -283,13 +283,15 @@ class CodeTreeSearch:
         from code_solver.agents.critic import CriticResult
 
         # public tests 未全过：所有模式下统一用打分决定 Refine/Abort
+        # 改成：所有模式下都用 Refine
         if not suite_result.all_passed:
-            score, reason = self.critic._score(
-                problem_str, node.strategy, node.code, suite_result
-            )
-            if score < self.critic.abort_threshold:
-                return CriticResult(CriticDecision.ABORT, score, reason)
-            return CriticResult(CriticDecision.REFINE, score, reason)
+            # score, reason = self.critic._score(
+            #     problem_str, node.strategy, node.code, suite_result
+            # )
+            # if score < self.critic.abort_threshold:
+            #     return CriticResult(CriticDecision.ABORT, score, reason)
+            score = 5.0
+            return CriticResult(CriticDecision.REFINE, score, "")
 
         # public tests 全过 → 根据开关选择验证策略
         if self.use_adversarial_tester:

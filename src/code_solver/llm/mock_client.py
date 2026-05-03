@@ -7,8 +7,7 @@ Mock LLM 客户端，专用于单元测试
   3. FnMockClient：用函数动态生成响应（最灵活）
 """
 
-from llm.base import LLMClient, LLMResponse, Message
-
+from code_solver.llm.base import LLMClient, LLMResponse, Message
 
 class FixedMockClient(LLMClient):
     """始终返回同一个预设字符串"""
@@ -18,6 +17,19 @@ class FixedMockClient(LLMClient):
         self.model = model
         self.call_count = 0
         self.call_history: list[list[Message]] = []
+
+    def reset_usage(self) -> None:
+        self.call_count = 0
+        self.call_history = []
+
+    def get_usage(self) -> dict:
+        return {
+            "calls": int(self.call_count),
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost_usd": 0.0,
+            "unpriced_calls": 0,
+        }
 
     def chat(
         self,
@@ -44,6 +56,19 @@ class ScriptedMockClient(LLMClient):
         self.call_count = 0
         self.call_history: list[list[Message]] = []
 
+    def reset_usage(self) -> None:
+        self.call_count = 0
+        self.call_history = []
+
+    def get_usage(self) -> dict:
+        return {
+            "calls": int(self.call_count),
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost_usd": 0.0,
+            "unpriced_calls": 0,
+        }
+
     def chat(
         self,
         messages: list[Message],
@@ -65,6 +90,19 @@ class FnMockClient(LLMClient):
         self.model = model
         self.call_count = 0
         self.call_history: list[list[Message]] = []
+
+    def reset_usage(self) -> None:
+        self.call_count = 0
+        self.call_history = []
+
+    def get_usage(self) -> dict:
+        return {
+            "calls": int(self.call_count),
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost_usd": 0.0,
+            "unpriced_calls": 0,
+        }
 
     def chat(
         self,
