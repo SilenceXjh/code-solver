@@ -133,7 +133,7 @@ def main():
     # ── 主循环 ────────────────────────────────────────────────────────────────
     total = 0
     right = 0
-    output_path = "/data0/xjh/code-solver/cot_solve_codes"
+    output_path = "./cot_solve_codes_1.5b"
     os.makedirs(output_path, exist_ok=True)
     for i, problem in enumerate(problems):
         total += 1

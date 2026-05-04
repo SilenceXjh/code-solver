@@ -32,10 +32,17 @@ PARADIGM_LABELS = [
 # ── Prompt 模板 ────────────────────────────────────────────────────────────────
 
 _STRATEGY_SYSTEM = """\
-You are an expert competitive programmer. Your task is to propose a high-level \
-algorithm strategy for solving a given programming problem.
-A strategy is a concise natural language description of the algorithm approach \
-(2-5 sentences). Do NOT write any code.
+You are an expert competitive programmer. Your task is to propose \
+a solution strategy for the given problem before writing code.
+
+A solution strategy is a concise but concrete plan (3–8 sentences) that:
+- Identifies the key idea needed to solve the problem
+- Explains how to transform the problem into a solvable form
+- Describes the main steps or structure of the solution
+- Mentions key data structures or techniques if needed
+
+Focus on how to arrive at the solution, not just describing it.
+Do NOT write code or pseudocode.
 """
 
 _STRATEGY_USER = """\
@@ -43,14 +50,29 @@ _STRATEGY_USER = """\
 {problem}
 
 ### Task
-Propose ONE algorithm strategy to solve this problem.
+Propose ONE solution strategy to solve this problem.
 
 {diversity_hint}
 
 Your strategy must:
 - Be clearly different from the already-explored approaches listed above
+- Avoid generic templates without concrete details
 - Specify the core algorithm paradigm (e.g., DP with memoization, greedy by X, BFS on Y)
-- Mention the key data structures if relevant
+
+Respond with ONLY the strategy text, no headers or bullet points.
+"""
+
+_STRATEGY_USER_NO_HISTORY = """\
+### Problem
+{problem}
+
+### Task
+Propose ONE solution strategy to solve this problem.
+
+### Requirements:
+- The approach must be specific to this problem
+- Avoid generic templates without concrete details
+- Specify the core algorithm paradigm (e.g., DP with memoization, greedy by X, BFS on Y)
 
 Respond with ONLY the strategy text, no headers or bullet points.
 """
@@ -106,8 +128,6 @@ _REFLECTION_USER = """\
 ### Execution Feedback
 {exec_feedback}
 
-{fault_info}
-
 ### Task
 Write a focused reflection (3-6 sentences) that:
 1. Identifies the root cause of the failure
@@ -152,15 +172,20 @@ class ThinkerAgent:
         Returns:
             StrategyResult，包含策略文本和范式标签
         """
-        diversity_hint = self._build_diversity_hint(explored_paradigms)
-        user_prompt = _STRATEGY_USER.format(
-            problem=problem,
-            diversity_hint=diversity_hint,
-        )
+        if len(explored_paradigms) == 0:
+            user_prompt = _STRATEGY_USER_NO_HISTORY.format(
+                problem=problem,
+            )
+        else:
+            diversity_hint = self._build_diversity_hint(explored_paradigms)
+            user_prompt = _STRATEGY_USER.format(
+                problem=problem,
+                diversity_hint=diversity_hint,
+            )
         strategy = self.llm.chat_simple(
             system=_STRATEGY_SYSTEM,
             user=user_prompt,
-            temperature=0.7,    # 策略生成需要一定多样性
+            temperature=0.2,    # 策略生成需要一定多样性
         ).strip()
 
         paradigm = self._classify_paradigm(strategy)
@@ -195,8 +220,7 @@ class ThinkerAgent:
             problem=problem,
             strategy=strategy,
             code=code,
-            exec_feedback=exec_feedback,
-            fault_info=fault_info,
+            exec_feedback=exec_feedback
         )
         # print("reflection input message:", user_prompt)
         return self.llm.chat_simple(

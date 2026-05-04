@@ -101,11 +101,12 @@ class FaultLocalizer:
         expected = failure.expected or ""
         actual   = failure.actual   or ""
 
-        failing_input = ""
-        for result, tc in zip(suite_result.results, test_cases):
-            if not result.passed:
-                failing_input = tc.input
-                break
+        failing_input = failure.test_input or ""
+        if not failing_input:
+            for result, tc in zip(suite_result.results, test_cases):
+                if not result.passed:
+                    failing_input = tc.input
+                    break
 
         diff_pattern = self._analyze_output_diff(expected, actual)
         summary = (

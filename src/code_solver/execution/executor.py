@@ -325,6 +325,7 @@ class ExecutionResult:
     exit_code: int
     timed_out: bool
     elapsed: float
+    test_input: str = ""
     expected: str = ""
     actual: str = ""
     error_code: int = 0
@@ -355,14 +356,22 @@ class ExecutionResult:
 
     def format_for_prompt(self) -> str:
         if self.timed_out:
-            return "❌ Time Limit Exceeded."
+            return (
+                "❌ Time Limit Exceeded.\n"
+                f"  Input    : {self.test_input!r}"
+            )
         if self.exit_code != 0:
             err_lines = self.stderr.strip().splitlines()
             snippet = "\n".join(err_lines[-20:])
-            return f"❌ Runtime Error ({self.error_type}):\n```\n{snippet}\n```"
+            return (
+                f"❌ Runtime Error ({self.error_type}):\n"
+                f"  Input    : {self.test_input!r}\n"
+                f"```\n{snippet}\n```"
+            )
         if not self.passed:
             return (
                 f"❌ Wrong Answer:\n"
+                f"  Input    : {self.test_input!r}\n"
                 f"  Expected : {self.expected!r}\n"
                 f"  Got      : {self.actual!r}"
             )
@@ -432,6 +441,7 @@ class Executor:
                 results=[ExecutionResult(
                     passed=False, stdout="", stderr="[SKIPPED]",
                     exit_code=0, timed_out=False, elapsed=0.0,
+                    test_input="[SKIPPED]",
                     expected="", actual="[SKIPPED]",
                     error_code=-1, error_message="Skipped",
                 )] , passed=0, total=len(test_cases), execution_time=0.0, errors=["Skipped"],
@@ -464,7 +474,7 @@ class Executor:
             if r.error_code != 0:
                 all_errors.append({
                     "index": idx,
-                    "inputs": truncatefn(tc.input),
+                    "inputs": truncatefn(r.test_input) if r.test_input else truncatefn(tc.input),
                     "expected": truncatefn(tc.output),
                     "output": truncatefn(r.actual) if r.actual else None,
                     "error": truncatefn(r.stderr) if r.stderr else None,
@@ -479,6 +489,7 @@ class Executor:
                     results.append(ExecutionResult(
                         passed=False, stdout="", stderr="[SKIPPED]",
                         exit_code=0, timed_out=False, elapsed=0.0,
+                        test_input=rem.input,
                         expected=rem.output, actual="[SKIPPED]",
                         error_code=-1, error_message="Skipped",
                     ))
@@ -505,6 +516,7 @@ class Executor:
             return ExecutionResult(
                 passed=False, stdout="", stderr="timeout",
                 exit_code=-1, timed_out=True, elapsed=float(self.timeout),
+                test_input=tc.input,
                 expected=tc.output, actual="[TIMEOUT]",
                 error_code=-3, error_message="Time Limit Exceeded",
             )
@@ -512,6 +524,7 @@ class Executor:
             return ExecutionResult(
                 passed=False, stdout="", stderr=str(e),
                 exit_code=-1, timed_out=False, elapsed=0.0,
+                test_input=tc.input,
                 expected=tc.output, actual="[COMPILE ERROR]",
                 error_code=-4, error_message=f"Compile Error: {e}",
             )
@@ -520,6 +533,7 @@ class Executor:
             return ExecutionResult(
                 passed=False, stdout="", stderr="Failed to compile",
                 exit_code=-1, timed_out=False, elapsed=0.0,
+                test_input=tc.input,
                 expected=tc.output, actual="[COMPILE ERROR]",
                 error_code=-4, error_message="Failed to compile code",
             )
@@ -529,6 +543,7 @@ class Executor:
             return ExecutionResult(
                 passed=False, stdout="", stderr="wrapped_function not found",
                 exit_code=-1, timed_out=False, elapsed=0.0,
+                test_input=tc.input,
                 expected=tc.output, actual="[FUNCTION NOT FOUND]",
                 error_code=-4, error_message="Function wrapped_function not found",
             )
@@ -551,6 +566,7 @@ class Executor:
                     return ExecutionResult(
                         passed=False, stdout="", stderr="timeout",
                         exit_code=-1, timed_out=True, elapsed=float(self.timeout),
+                        test_input=tc.input,
                         expected=tc.output, actual="[TIMEOUT]",
                         error_code=-3, error_message="Time Limit Exceeded",
                     )
@@ -561,12 +577,14 @@ class Executor:
                         return ExecutionResult(
                             passed=False, stdout="", stderr=error_msg,
                             exit_code=-1, timed_out=True, elapsed=float(self.timeout),
+                            test_input=tc.input,
                             expected=tc.output, actual="[TIMEOUT]",
                             error_code=-3, error_message="Time Limit Exceeded",
                         )
                     return ExecutionResult(
                         passed=False, stdout="", stderr=error_msg,
                         exit_code=-1, timed_out=False, elapsed=0.0,
+                        test_input=tc.input,
                         expected=tc.output, actual="[RUNTIME ERROR]",
                         error_code=-4, error_message=f"Runtime Error: {e}",
                     )
@@ -583,6 +601,7 @@ class Executor:
             return ExecutionResult(
                 passed=False, stdout="", stderr=str(e),
                 exit_code=-1, timed_out=False, elapsed=0.0,
+                test_input=tc.input,
                 expected=tc.output, actual="[ERROR]",
                 error_code=-4, error_message=f"Error: {e}",
             )
@@ -598,6 +617,7 @@ class Executor:
                 exit_code=0,
                 timed_out=False,
                 elapsed=total_execution_time,
+                test_input=tc.input,
                 expected=tc.output,
                 actual=prediction,
                 error_code=-2,
@@ -619,6 +639,7 @@ class Executor:
                     exit_code=0,
                     timed_out=False,
                     elapsed=total_execution_time,
+                    test_input=tc.input,
                     expected=tc.output,
                     actual=prediction,
                     error_code=-2,
@@ -634,6 +655,7 @@ class Executor:
                     exit_code=0,
                     timed_out=False,
                     elapsed=total_execution_time,
+                    test_input=tc.input,
                     expected=tc.output,
                     actual=prediction,
                     error_code=-2,
@@ -648,6 +670,7 @@ class Executor:
                     exit_code=0,
                     timed_out=False,
                     elapsed=total_execution_time,
+                    test_input=tc.input,
                     expected=tc.output,
                     actual=prediction,
                     error_code=-2,
@@ -661,6 +684,7 @@ class Executor:
             exit_code=0,
             timed_out=False,
             elapsed=total_execution_time,
+            test_input=tc.input,
             expected=tc.output,
             actual=prediction,
             error_code=0,
@@ -676,6 +700,7 @@ class Executor:
             return ExecutionResult(
                 passed=False, stdout="", stderr="timeout",
                 exit_code=-1, timed_out=True, elapsed=float(self.timeout),
+                test_input=tc.input,
                 expected=tc.output, actual="[TIMEOUT]",
                 error_code=-3, error_message="Time Limit Exceeded",
             )
@@ -683,6 +708,7 @@ class Executor:
             return ExecutionResult(
                 passed=False, stdout="", stderr=str(e),
                 exit_code=-1, timed_out=False, elapsed=0.0,
+                test_input=tc.input,
                 expected=tc.output, actual="[COMPILE ERROR]",
                 error_code=-4, error_message=f"Compile Error: {e}",
             )
@@ -691,6 +717,7 @@ class Executor:
             return ExecutionResult(
                 passed=False, stdout="", stderr="Failed to compile",
                 exit_code=-1, timed_out=False, elapsed=0.0,
+                test_input=tc.input,
                 expected=tc.output, actual="[COMPILE ERROR]",
                 error_code=-4, error_message="Failed to compile code",
             )
@@ -715,6 +742,7 @@ class Executor:
             return ExecutionResult(
                 passed=False, stdout="", stderr=f"function {fn_name} not found",
                 exit_code=-1, timed_out=False, elapsed=0.0,
+                test_input=tc.input,
                 expected=tc.output, actual="[FUNCTION NOT FOUND]",
                 error_code=-4, error_message=f"Function {fn_name} not found",
             )
@@ -741,6 +769,7 @@ class Executor:
             return ExecutionResult(
                 passed=False, stdout="", stderr="timeout",
                 exit_code=-1, timed_out=True, elapsed=float(self.timeout),
+                test_input=tc.input,
                 expected=tc.output, actual="[TIMEOUT]",
                 error_code=-3, error_message="Time Limit Exceeded",
             )
@@ -750,6 +779,7 @@ class Executor:
             return ExecutionResult(
                 passed=False, stdout="", stderr="",
                 exit_code=-1, timed_out=False, elapsed=total_execution_time,
+                test_input=tc.input,
                 expected=tc.output, actual="[RUNTIME ERROR]",
                 error_code=-4, error_message=f"Runtime Error: {e}",
             )
@@ -760,12 +790,14 @@ class Executor:
                 return ExecutionResult(
                     passed=False, stdout="", stderr=error_msg,
                     exit_code=-1, timed_out=True, elapsed=float(self.timeout),
+                    test_input=tc.input,
                     expected=tc.output, actual="[TIMEOUT]",
                     error_code=-3, error_message="Time Limit Exceeded",
                 )
             return ExecutionResult(
                 passed=False, stdout="", stderr=error_msg,
                 exit_code=-1, timed_out=False, elapsed=total_execution_time,
+                test_input=tc.input,
                 expected=tc.output, actual="[RUNTIME ERROR]",
                 error_code=-4, error_message=f"Runtime Error: {e}",
             )
@@ -785,6 +817,7 @@ class Executor:
                 exit_code=0,
                 timed_out=False,
                 elapsed=total_execution_time,
+                test_input=tc.input,
                 expected=json.dumps(gt_out, default=str),
                 actual=json.dumps(prediction, default=str),
                 error_code=-2,
@@ -798,6 +831,7 @@ class Executor:
             exit_code=0,
             timed_out=False,
             elapsed=total_execution_time,
+            test_input=tc.input,
             expected=tc.output,
             actual=json.dumps(prediction, default=str),
             error_code=0,
@@ -852,7 +886,7 @@ def run_test(sample, test=None, timeout=6):
             if r.error_code != 0:
                 metadata["errors"].append({
                     "index": i,
-                    "inputs": truncatefn(tc.input),
+                    "inputs": truncatefn(r.test_input) if r.test_input else truncatefn(tc.input),
                     "expected": truncatefn(tc.output),
                     "output": truncatefn(r.actual),
                     "error_code": r.error_code,
@@ -873,7 +907,7 @@ def run_test(sample, test=None, timeout=6):
             if r.error_code != 0:
                 metadata["errors"].append({
                     "index": i,
-                    "inputs": truncatefn(tc.input),
+                    "inputs": truncatefn(r.test_input) if r.test_input else truncatefn(tc.input),
                     "expected": truncatefn(tc.output),
                     "output": truncatefn(r.actual) if r.actual else None,
                     "error": truncatefn(r.stderr) if r.stderr else None,

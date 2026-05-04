@@ -119,7 +119,7 @@ class AdversarialTester:
         first_fail_input = first_fail_exp = first_fail_act = ""
         for result, tc in zip(suite.results, generated):
             if not result.passed:
-                first_fail_input    = tc.input
+                first_fail_input    = result.test_input or tc.input
                 first_fail_exp      = result.expected
                 first_fail_act      = result.actual
                 break

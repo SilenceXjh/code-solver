@@ -135,7 +135,7 @@ def main():
     stdin_right = 0
     functional_right = 0
 
-    output_path = "/data0/xjh/code-solver/direct_solve_codes"
+    output_path = "./direct_solve_codes_1.5b"
     os.makedirs(output_path, exist_ok=True)
 
     for i, problem in enumerate(problems):

@@ -129,7 +129,6 @@ def main():
         max_problems=args.max_problems,
     )
     problems = loader.load()
-    problems = problems[100:]
 
     if not problems:
         log.error("No problems loaded. Check --lcb-version and cache.")

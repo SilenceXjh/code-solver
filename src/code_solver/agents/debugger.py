@@ -22,17 +22,12 @@ Your task is to fix the bug and return a corrected, complete Python solution.
 
 Rules:
 - Output ONLY the fixed Python code, no explanation
-- The solution must read input from stdin and print to stdout
-- Preserve the overall algorithm strategy unless it is fundamentally flawed
 - Make the minimal change necessary to fix the identified bug
 """
 
 _DEBUGGER_USER = """\
 ### Problem
 {problem}
-
-### Algorithm Strategy
-{strategy}
 
 ### Buggy Code
 ```python
@@ -41,9 +36,6 @@ _DEBUGGER_USER = """\
 
 ### Execution Feedback
 {exec_feedback}
-
-### Fault Analysis
-{fault_info}
 
 ### Reflection (what to fix)
 {reflection}
@@ -82,25 +74,24 @@ class DebuggerAgent:
         Returns:
             修复后的 Python 代码
         """
-        fault_info = (
-            fault_report.format_for_prompt()
-            if fault_report and fault_report.found
-            else "No additional fault localization available."
-        )
+        # fault_info = (
+        #     fault_report.format_for_prompt()
+        #     if fault_report and fault_report.found
+        #     else "No additional fault localization available."
+        # )
         reflection_text = reflection or "Focus on fixing the identified bug."
 
         user_prompt = _DEBUGGER_USER.format(
             problem=problem,
-            strategy=strategy,
             code=code,
             exec_feedback=exec_feedback,
-            fault_info=fault_info,
             reflection=reflection_text,
         )
+        # print("debugger user prompt:", user_prompt)
         raw = self.llm.chat_simple(
             system=_DEBUGGER_SYSTEM,
             user=user_prompt,
-            temperature=0.4,    # 修复时需要一定保守性，但也要有创造力
+            temperature=0.2,    # 修复时需要一定保守性，但也要有创造力
         )
         return self._extract_code(raw)
 

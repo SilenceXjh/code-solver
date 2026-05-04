@@ -160,12 +160,14 @@ class OpenAIClient(LLMClient):
                 input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
                 output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
                 
-                input_tokens_cache_hit = int(getattr(usage, "prompt_cache_hit_tokens", 0) or 0)
-                input_tokens_cache_miss = int(getattr(usage, "prompt_cache_miss_tokens", 0) or 0)
+                if self.model == "deepseek-v4-flash":
+                    input_tokens_cache_hit = int(getattr(usage, "prompt_cache_hit_tokens", 0) or 0)
+                    input_tokens_cache_miss = int(getattr(usage, "prompt_cache_miss_tokens", 0) or 0)
+                    
+                    assert input_tokens == input_tokens_cache_hit + input_tokens_cache_miss, f"input_tokens ({input_tokens}) != input_tokens_cache_hit ({input_tokens_cache_hit}) + input_tokens_cache_miss ({input_tokens_cache_miss})"
+                    cost_usd = self._estimate_cost_usd(model, input_tokens_cache_hit, input_tokens_cache_miss, output_tokens)
+                    self._record_usage(model, input_tokens_cache_hit, input_tokens_cache_miss, output_tokens, cost_usd)
                 
-                assert input_tokens == input_tokens_cache_hit + input_tokens_cache_miss, f"input_tokens ({input_tokens}) != input_tokens_cache_hit ({input_tokens_cache_hit}) + input_tokens_cache_miss ({input_tokens_cache_miss})"
-                cost_usd = self._estimate_cost_usd(model, input_tokens_cache_hit, input_tokens_cache_miss, output_tokens)
-                self._record_usage(model, input_tokens_cache_hit, input_tokens_cache_miss, output_tokens, cost_usd)
                 return LLMResponse(
                     content=resp.choices[0].message.content,
                     model=model,
