@@ -64,6 +64,8 @@ class CodeTreeSearch:
         assessor: DifficultyAssessor,
         localizer: FaultLocalizer,
         executor: Executor,
+        default_width: int = 3,
+        default_depth: int = 3,
         # 消融实验开关
         use_difficulty_assessor: bool = True,   # 方向C：难度感知预算
         use_diversity_thinker:   bool = True,   # 方向D：多样性策略约束
@@ -78,6 +80,8 @@ class CodeTreeSearch:
         self.assessor = assessor
         self.localizer = localizer
         self.executor  = executor
+        self.default_width = default_width
+        self.default_depth = default_depth
 
         self.use_difficulty_assessor = use_difficulty_assessor
         self.use_diversity_thinker   = use_diversity_thinker
@@ -104,11 +108,11 @@ class CodeTreeSearch:
             )
         else:
             # 消融：固定预算（CodeTree 原始默认）
-            width, depth = 3, 3
+            width, depth = self.default_width, self.default_depth
 
         tree = SearchTree(
             problem_id=problem.problem_id,
-            budget_total=width * (depth + 1),  # 粗略估计总预算
+            budget_total=width * (depth + 2),  # 粗略估计总预算
         )
 
         # ── Step 2：BFS 策略探索（宽度 = width）─────────────────────────────

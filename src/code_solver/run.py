@@ -74,6 +74,8 @@ def build_search_engine(args):
         assessor=DifficultyAssessor(llm),
         localizer=FaultLocalizer(),
         executor=ex,
+        default_width=args.width,
+        default_depth=args.depth,
         use_difficulty_assessor=not args.no_difficulty,
         use_diversity_thinker=not args.no_diversity,
         use_fault_localizer=not args.no_fault_localizer,
@@ -117,6 +119,10 @@ def main():
     # 题目范围
     parser.add_argument("--start-index",     type=int,   default=-1)
     parser.add_argument("--end-index",       type=int,   default=-1)
+
+    # 搜索深度与宽度
+    parser.add_argument("--width", type=int, default=3)
+    parser.add_argument("--depth", type=int, default=3)
 
     args = parser.parse_args()
 
