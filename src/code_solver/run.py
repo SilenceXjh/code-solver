@@ -87,7 +87,7 @@ def main():
     parser = argparse.ArgumentParser(description="CodeTree+ evaluation on LiveCodeBench")
 
     # LLM 配置
-    parser.add_argument("--model",     default="deepseek-v4-flash")
+    parser.add_argument("--model",     default="")
     parser.add_argument("--api-key",   default=None)
     parser.add_argument("--api-base",  default=None, help="vLLM endpoint URL")
     parser.add_argument("--mock",      action="store_true", help="Use mock LLM for local testing")
@@ -114,6 +114,10 @@ def main():
     parser.add_argument("--output",   default="./results")
     parser.add_argument("--run-name", default="codetree_plus_ds")
 
+    # 题目范围
+    parser.add_argument("--start-index",     type=int,   default=-1)
+    parser.add_argument("--end-index",       type=int,   default=-1)
+
     args = parser.parse_args()
 
     # ── 加载数据集 ────────────────────────────────────────────────────────────
@@ -129,6 +133,8 @@ def main():
         max_problems=args.max_problems,
     )
     problems = loader.load()
+    if args.start_index >= 0 and args.end_index >= 0:
+        problems = problems[args.start_index:args.end_index]
 
     if not problems:
         log.error("No problems loaded. Check --lcb-version and cache.")

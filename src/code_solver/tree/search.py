@@ -148,7 +148,7 @@ class CodeTreeSearch:
             )
 
             if accepted:
-                tree.accepted_node = node  # 可能被子节点覆盖，search_tree.best_node() 处理
+                # tree.accepted_node = node  # 可能被子节点覆盖，search_tree.best_node() 处理
                 log.info(f"[{problem.problem_id}] ✅ Solution accepted!")
                 break
 

@@ -70,7 +70,7 @@ class SolverAgent:
         raw = self.llm.chat_simple(
             system=_SOLVER_SYSTEM,
             user=user_prompt,
-            temperature=0.8,    # 代码生成需要多样性以覆盖不同实现
+            temperature=0.2,    # 代码生成需要多样性以覆盖不同实现
         )
         return self._extract_code(raw)
 
