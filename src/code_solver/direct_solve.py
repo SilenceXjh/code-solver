@@ -82,22 +82,6 @@ def main():
     parser.add_argument("--max-problems",  type=int, default=None)
     parser.add_argument("--cache-dir",     default="./lcb_cache")
 
-    # 执行配置
-    parser.add_argument("--timeout",          type=int,   default=10)
-    parser.add_argument("--num-adv-tests",    type=int,   default=5)
-    parser.add_argument("--abort-threshold",  type=float, default=3.0)
-
-    # 消融开关
-    parser.add_argument("--no-difficulty",      action="store_true", help="Ablation: disable DifficultyAssessor")
-    parser.add_argument("--no-diversity",       action="store_true", help="Ablation: disable diversity constraint")
-    parser.add_argument("--no-fault-localizer", action="store_true", help="Ablation: disable FaultLocalizer")
-    parser.add_argument("--no-llm-verifier",    action="store_true", help="Ablation: disable LLM verifier (public pass = direct accept)")
-    parser.add_argument("--no-adversarial",     action="store_true", help="Ablation: disable AdversarialTester")
-
-    # 输出配置
-    parser.add_argument("--output",   default="./results")
-    parser.add_argument("--run-name", default="codetree_plus")
-
     args = parser.parse_args()
 
     # ── 加载数据集 ────────────────────────────────────────────────────────────
@@ -120,7 +104,7 @@ def main():
     from code_solver.llm.openai_client import OpenAIClient
     llm = OpenAIClient(
         model=args.model,
-        api_key=args.api_key or os.environ.get("OPENAI_API_KEY"),
+        api_key=args.api_key or os.environ.get("DEEPSEEK_API_KEY"),
         api_base=args.api_base,
     )
     log.info(f"Using model: {args.model}")
@@ -135,7 +119,7 @@ def main():
     stdin_right = 0
     functional_right = 0
 
-    output_path = "./direct_solve_codes_1.5b"
+    output_path = "./direct_solve_codes_ds"
     os.makedirs(output_path, exist_ok=True)
 
     for i, problem in enumerate(problems):
