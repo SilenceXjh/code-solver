@@ -238,13 +238,19 @@ class CodeTreeSearch:
                 critic_result.adversarial
             ) if hasattr(self.critic, 'adversarial_tester') else ""
 
-        reflection = self.thinker.generate_reflection(
-            problem=problem_str,
-            strategy=node.strategy,
-            code=node.code,
-            exec_feedback=exec_feedback,
-            fault_report=node.fault_report,
-        )
+        if suite_result.all_passed:
+            if critic_result.reason:
+                reflection = critic_result.reason
+            else:
+                reflection = "The critic requested a refinement. Re-check edge cases and constraints, then apply the minimal correction."
+        else:
+            reflection = self.thinker.generate_reflection(
+                problem=problem_str,
+                strategy=node.strategy,
+                code=node.code,
+                exec_feedback=exec_feedback,
+                fault_report=node.fault_report,
+            )
         node.reflection = reflection
 
         fixed_code = self.debugger.fix(
@@ -311,7 +317,7 @@ class CodeTreeSearch:
             score = 8.0 if looks_correct else 5.0
             if looks_correct:
                 return CriticResult(CriticDecision.ACCEPT, score, reason + " [LLM verified]")
-            return CriticResult(CriticDecision.REFINE, score, reason + " [LLM suspects issues]")
+            return CriticResult(CriticDecision.REFINE, score, reason)
         else:
             # 消融B：最简 Baseline，public 全过直接 Accept
             return CriticResult(
