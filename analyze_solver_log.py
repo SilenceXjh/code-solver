@@ -1,6 +1,6 @@
 import json
 
-log_file = "results/run_ds.jsonl"
+log_file = "results/run_ds_base.jsonl"
 
 data = []
 with open(log_file, "r") as f:

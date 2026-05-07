@@ -1,10 +1,10 @@
-nohup python src/code_solver/run.py --model qwen7b --api-base http://localhost:8000/v1 --no-difficulty --no-fault-localizer --no-adversarial --start-index 0 --end-index 100 --run-name run_qwen_0_100 > run_qwen_0_100.log 2>&1 &
-nohup python src/code_solver/run.py --model qwen7b --api-base http://localhost:8000/v1 --no-difficulty --no-fault-localizer --no-adversarial --start-index 100 --end-index 200 --run-name run_qwen_100_200 > run_qwen_100_200.log 2>&1 &
-nohup python src/code_solver/run.py --model qwen7b --api-base http://localhost:8000/v1 --no-difficulty --no-fault-localizer --no-adversarial --start-index 200 --end-index 300 --run-name run_qwen_200_300 > run_qwen_200_300.log 2>&1 &
-nohup python src/code_solver/run.py --model qwen7b --api-base http://localhost:8000/v1 --no-difficulty --no-fault-localizer --no-adversarial --start-index 300 --end-index 400 --run-name run_qwen_300_400 > run_qwen_300_400.log 2>&1 &
-nohup python src/code_solver/run.py --model qwen7b --api-base http://localhost:8000/v1 --no-difficulty --no-fault-localizer --no-adversarial --start-index 400 --end-index 500 --run-name run_qwen_400_500 > run_qwen_400_500.log 2>&1 &
-nohup python src/code_solver/run.py --model qwen7b --api-base http://localhost:8000/v1 --no-difficulty --no-fault-localizer --no-adversarial --start-index 500 --end-index 600 --run-name run_qwen_500_600 > run_qwen_500_600.log 2>&1 &
-nohup python src/code_solver/run.py --model qwen7b --api-base http://localhost:8000/v1 --no-difficulty --no-fault-localizer --no-adversarial --start-index 600 --end-index 700 --run-name run_qwen_600_700 > run_qwen_600_700.log 2>&1 &
-nohup python src/code_solver/run.py --model qwen7b --api-base http://localhost:8000/v1 --no-difficulty --no-fault-localizer --no-adversarial --start-index 700 --end-index 800 --run-name run_qwen_700_800 > run_qwen_700_800.log 2>&1 &
-nohup python src/code_solver/run.py --model qwen7b --api-base http://localhost:8000/v1 --no-difficulty --no-fault-localizer --no-adversarial --start-index 800 --end-index 900 --run-name run_qwen_800_900 > run_qwen_800_900.log 2>&1 &
-nohup python src/code_solver/run.py --model qwen7b --api-base http://localhost:8000/v1 --no-difficulty --no-fault-localizer --no-adversarial --start-index 900 --end-index 1055 --run-name run_qwen_900_1055 > run_qwen_900_1055.log 2>&1 &
+for start in $(seq 0 100 900); do
+  if [ "$start" -eq 900 ]; then
+    end=1055
+  else
+    end=$((start + 100))
+  fi
+
+  run_name="run_qwen_full_${start}_${end}"
+  nohup python src/code_solver/run.py --model qwen7b --api-base http://localhost:8000/v1 --no-difficulty --no-fault-localizer --no-adversarial --start-index "$start" --end-index "$end" --run-name "$run_name" > "${run_name}.log" 2>&1 &
+done
